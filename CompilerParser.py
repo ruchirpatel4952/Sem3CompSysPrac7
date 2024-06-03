@@ -1,3 +1,6 @@
+from ParseTree import ParseTree  # Ensure ParseTree is imported
+from Token import Token  # Ensure Token is imported
+
 class CompilerParser:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -48,7 +51,7 @@ class CompilerParser:
     def compileClassVarDec(self):
         var_dec_tree = ParseTree('classVarDec')
         var_dec_tree.addChild(ParseTree('keyword', self.mustbe('keyword').value))
-        var_dec_tree.addChild(ParseTree('type', self.mustbe('type').value))
+        var_dec_tree.addChild(ParseTree('type', self.mustbeType().value))
         var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
 
         while self.have('symbol', ','):
@@ -61,7 +64,7 @@ class CompilerParser:
     def compileSubroutine(self):
         subroutine_tree = ParseTree('subroutine')
         subroutine_tree.addChild(ParseTree('keyword', self.mustbe('keyword').value))
-        subroutine_tree.addChild(ParseTree('type', self.mustbe('type').value))
+        subroutine_tree.addChild(ParseTree('type', self.mustbeType().value))
         subroutine_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
         subroutine_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
 
@@ -75,12 +78,12 @@ class CompilerParser:
     def compileParameterList(self):
         parameter_list_tree = ParseTree('parameterList')
         if not self.have('symbol', ')'):
-            parameter_list_tree.addChild(ParseTree('type', self.mustbe('type').value))
+            parameter_list_tree.addChild(ParseTree('type', self.mustbeType().value))
             parameter_list_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
 
             while self.have('symbol', ','):
                 parameter_list_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ',').value))
-                parameter_list_tree.addChild(ParseTree('type', self.mustbe('type').value))
+                parameter_list_tree.addChild(ParseTree('type', self.mustbeType().value))
                 parameter_list_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
         
         return parameter_list_tree
@@ -100,7 +103,7 @@ class CompilerParser:
     def compileVarDec(self):
         var_dec_tree = ParseTree('varDec')
         var_dec_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'var').value))
-        var_dec_tree.addChild(ParseTree('type', self.mustbe('type').value))
+        var_dec_tree.addChild(ParseTree('type', self.mustbeType().value))
         var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
 
         while self.have('symbol', ','):
@@ -251,6 +254,12 @@ class CompilerParser:
         subroutine_call_tree.addChild(self.compileExpressionList())
         subroutine_call_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
         return subroutine_call_tree
+
+    def mustbeType(self):
+        if self.have('keyword', 'int') or self.have('keyword', 'char') or self.have('keyword', 'boolean'):
+            return self.mustbe('keyword')
+        else:
+            return self.mustbe('identifier')
 
 class ParseException(Exception):
     pass
