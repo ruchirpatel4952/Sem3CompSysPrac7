@@ -1,31 +1,26 @@
-from ParseTree import ParseTree  # Ensure ParseTree is imported
-from Token import Token  # Ensure Token is imported
+from ParseTree import ParseTree, Token, ParseException
 
 class CompilerParser:
     def __init__(self, tokens):
         self.tokens = tokens
-        self.current_token_index = 0
+        self.current_index = 0
 
     def next(self):
-        if self.current_token_index < len(self.tokens) - 1:
-            self.current_token_index += 1
-        return self.current()
+        if self.current_index < len(self.tokens) - 1:
+            self.current_index += 1
 
     def current(self):
-        if self.current_token_index < len(self.tokens):
-            return self.tokens[self.current_token_index]
-        return None
+        return self.tokens[self.current_index]
 
-    def have(self, type, value=None):
+    def have(self, expected_type, expected_value=None):
         token = self.current()
-        if token:
-            if token.type == type and (value is None or token.value == value):
-                return True
-        return False
+        if expected_value is None:
+            return token.getType() == expected_type
+        return token.getType() == expected_type and token.getValue() == expected_value
 
-    def mustbe(self, type, value=None):
-        if not self.have(type, value):
-            raise ParseException(f"Expected {type} {value}, but found {self.current()}")
+    def mustBe(self, expected_type, expected_value=None):
+        if not self.have(expected_type, expected_value):
+            raise ParseException(f"Expected {expected_type} {expected_value}, got {self.current().getType()} {self.current().getValue()}")
         token = self.current()
         self.next()
         return token
@@ -34,232 +29,240 @@ class CompilerParser:
         return self.compileClass()
 
     def compileClass(self):
-        class_tree = ParseTree('class')
-        class_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'class').value))
-        class_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-        class_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '{').value))
+        tree = ParseTree("class", "class")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "class"))
+        tree.addChild(self.mustBe("identifier").getValue())  # Adding value of the identifier token
+        tree.addChild(self.mustBe("symbol", "{"))
 
-        while self.have('keyword', 'static') or self.have('keyword', 'field'):
-            class_tree.addChild(self.compileClassVarDec())
+        while self.have("keyword", "static") or self.have("keyword", "field"):
+            tree.addChild(self.compileClassVarDec())
 
-        while self.have('keyword', 'constructor') or self.have('keyword', 'function') or self.have('keyword', 'method'):
-            class_tree.addChild(self.compileSubroutine())
+        while self.have("keyword", "constructor") or self.have("keyword", "function") or self.have("keyword", "method"):
+            tree.addChild(self.compileSubroutine())
 
-        class_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '}').value))
-        return class_tree
+        tree.addChild(self.mustBe("symbol", "}"))
+        return tree
 
     def compileClassVarDec(self):
-        var_dec_tree = ParseTree('classVarDec')
-        var_dec_tree.addChild(ParseTree('keyword', self.mustbe('keyword').value))
-        var_dec_tree.addChild(ParseTree('type', self.mustbeType().value))
-        var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        tree = ParseTree("classVarDec", "classVarDec")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", ["static", "field"]))
+        tree.addChild(self.mustBe("keyword", ["int", "char", "boolean"]) or self.mustBe("identifier"))
+        tree.addChild(self.mustBe("identifier"))
 
-        while self.have('symbol', ','):
-            var_dec_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ',').value))
-            var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        while self.have("symbol", ","):
+            tree.addChild(self.mustBe("symbol", ","))
+            tree.addChild(self.mustBe("identifier"))
 
-        var_dec_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ';').value))
-        return var_dec_tree
+        tree.addChild(self.mustBe("symbol", ";"))
+        return tree
 
     def compileSubroutine(self):
-        subroutine_tree = ParseTree('subroutine')
-        subroutine_tree.addChild(ParseTree('keyword', self.mustbe('keyword').value))
-        subroutine_tree.addChild(ParseTree('type', self.mustbeType().value))
-        subroutine_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-        subroutine_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-
-        subroutine_tree.addChild(self.compileParameterList())
-
-        subroutine_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        subroutine_tree.addChild(self.compileSubroutineBody())
-
-        return subroutine_tree
+        tree = ParseTree("subroutine", "subroutine")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", ["constructor", "function", "method"]))
+        tree.addChild(self.mustBe("keyword", ["void", "int", "char", "boolean"]) or self.mustBe("identifier"))
+        tree.addChild(self.mustBe("identifier"))
+        tree.addChild(self.mustBe("symbol", "("))
+        tree.addChild(self.compileParameterList())
+        tree.addChild(self.mustBe("symbol", ")"))
+        tree.addChild(self.compileSubroutineBody())
+        return tree
 
     def compileParameterList(self):
-        parameter_list_tree = ParseTree('parameterList')
-        if not self.have('symbol', ')'):
-            parameter_list_tree.addChild(ParseTree('type', self.mustbeType().value))
-            parameter_list_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        tree = ParseTree("parameterList", "parameterList")  # Update ParseTree constructor call
+        if not self.have("symbol", ")"):
+            tree.addChild(self.mustBe("keyword", ["int", "char", "boolean"]) or self.mustBe("identifier"))
+            tree.addChild(self.mustBe("identifier"))
 
-            while self.have('symbol', ','):
-                parameter_list_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ',').value))
-                parameter_list_tree.addChild(ParseTree('type', self.mustbeType().value))
-                parameter_list_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-        
-        return parameter_list_tree
+            while self.have("symbol", ","):
+                tree.addChild(self.mustBe("symbol", ","))
+                tree.addChild(self.mustBe("keyword", ["int", "char", "boolean"]) or self.mustBe("identifier"))
+                tree.addChild(self.mustBe("identifier"))
+
+        return tree
 
     def compileSubroutineBody(self):
-        body_tree = ParseTree('subroutineBody')
-        body_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '{').value))
+        tree = ParseTree("subroutineBody", "subroutineBody")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("symbol", "{"))
 
-        while self.have('keyword', 'var'):
-            body_tree.addChild(self.compileVarDec())
+        while self.have("keyword", "var"):
+            tree.addChild(self.compileVarDec())
 
-        body_tree.addChild(self.compileStatements())
-        body_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '}').value))
-
-        return body_tree
+        tree.addChild(self.compileStatements())
+        tree.addChild(self.mustBe("symbol", "}"))
+        return tree
 
     def compileVarDec(self):
-        var_dec_tree = ParseTree('varDec')
-        var_dec_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'var').value))
-        var_dec_tree.addChild(ParseTree('type', self.mustbeType().value))
-        var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        tree = ParseTree("varDec", "varDec")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "var"))
+        tree.addChild(self.mustBe("keyword", ["int", "char", "boolean"]) or self.mustBe("identifier"))
+        tree.addChild(self.mustBe("identifier"))
 
-        while self.have('symbol', ','):
-            var_dec_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ',').value))
-            var_dec_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        while self.have("symbol", ","):
+            tree.addChild(self.mustBe("symbol", ","))
+            tree.addChild(self.mustBe("identifier"))
 
-        var_dec_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ';').value))
-        return var_dec_tree
+        tree.addChild(self.mustBe("symbol", ";"))
+        return tree
 
     def compileStatements(self):
-        statements_tree = ParseTree('statements')
-        while self.have('keyword'):
-            if self.have('keyword', 'let'):
-                statements_tree.addChild(self.compileLet())
-            elif self.have('keyword', 'if'):
-                statements_tree.addChild(self.compileIf())
-            elif self.have('keyword', 'while'):
-                statements_tree.addChild(self.compileWhile())
-            elif self.have('keyword', 'do'):
-                statements_tree.addChild(self.compileDo())
-            elif self.have('keyword', 'return'):
-                statements_tree.addChild(self.compileReturn())
-        return statements_tree
+        tree = ParseTree("statements", "statements")  # Update ParseTree constructor call
+        while self.have("keyword", ["let", "if", "while", "do", "return"]):
+            if self.have("keyword", "let"):
+                tree.addChild(self.compileLet())
+            elif self.have("keyword", "if"):
+                tree.addChild(self.compileIf())
+            elif self.have("keyword", "while"):
+                tree.addChild(self.compileWhile())
+            elif self.have("keyword", "do"):
+                tree.addChild(self.compileDo())
+            elif self.have("keyword", "return"):
+                tree.addChild(self.compileReturn())
+        return tree
 
     def compileLet(self):
-        let_tree = ParseTree('letStatement')
-        let_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'let').value))
-        let_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
+        tree = ParseTree("letStatement", "letStatement")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "let"))
+        tree.addChild(self.mustBe("identifier"))
 
-        if self.have('symbol', '['):
-            let_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '[').value))
-            let_tree.addChild(self.compileExpression())
-            let_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ']').value))
+        if self.have("symbol", "["):
+            tree.addChild(self.mustBe("symbol", "["))
+            tree.addChild(self.compileExpression())
+            tree.addChild(self.mustBe("symbol", "]"))
 
-        let_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '=').value))
-        let_tree.addChild(self.compileExpression())
-        let_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ';').value))
-
-        return let_tree
+        tree.addChild(self.mustBe("symbol", "="))
+        tree.addChild(self.compileExpression())
+        tree.addChild(self.mustBe("symbol", ";"))
+        return tree
 
     def compileIf(self):
-        if_tree = ParseTree('ifStatement')
-        if_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'if').value))
-        if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-        if_tree.addChild(self.compileExpression())
-        if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '{').value))
-        if_tree.addChild(self.compileStatements())
-        if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '}').value))
+        tree = ParseTree("ifStatement", "ifStatement")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "if"))
+        tree.addChild(self.mustBe("symbol", "("))
+        tree.addChild(self.compileExpression())
+        tree.addChild(self.mustBe("symbol", ")"))
+        tree.addChild(self.mustBe("symbol", "{"))
+        tree.addChild(self.compileStatements())
+        tree.addChild(self.mustBe("symbol", "}"))
 
-        if self.have('keyword', 'else'):
-            if_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'else').value))
-            if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '{').value))
-            if_tree.addChild(self.compileStatements())
-            if_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '}').value))
+        if self.have("keyword", "else"):
+            tree.addChild(self.mustBe("keyword", "else"))
+            tree.addChild(self.mustBe("symbol", "{"))
+            tree.addChild(self.compileStatements())
+            tree.addChild(self.mustBe("symbol", "}"))
 
-        return if_tree
+        return tree
 
     def compileWhile(self):
-        while_tree = ParseTree('whileStatement')
-        while_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'while').value))
-        while_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-        while_tree.addChild(self.compileExpression())
-        while_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        while_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '{').value))
-        while_tree.addChild(self.compileStatements())
-        while_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '}').value))
-        return while_tree
+        tree = ParseTree("whileStatement", "whileStatement")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "while"))
+        tree.addChild(self.mustBe("symbol", "("))
+        tree.addChild(self.compileExpression())
+        tree.addChild(self.mustBe("symbol", ")"))
+        tree.addChild(self.mustBe("symbol", "{"))
+        tree.addChild(self.compileStatements())
+        tree.addChild(self.mustBe("symbol", "}"))
+        return tree
 
     def compileDo(self):
-        do_tree = ParseTree('doStatement')
-        do_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'do').value))
-        do_tree.addChild(self.compileSubroutineCall())
-        do_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ';').value))
-        return do_tree
-
+        tree = ParseTree("doStatement", "doStatement")  # Update ParseTree constructor call
+        tree.addChild(self.mustBe("keyword", "do"))
+        tree.addChild(self.compileSubroutineCall())
+        tree.addChild(self.mustBe("symbol", ";"))
+        return tree
+    
     def compileReturn(self):
-        return_tree = ParseTree('returnStatement')
-        return_tree.addChild(ParseTree('keyword', self.mustbe('keyword', 'return').value))
-        if not self.have('symbol', ';'):
-            return_tree.addChild(self.compileExpression())
-        return_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ';').value))
-        return return_tree
+        tree = ParseTree("returnStatement")
+        tree.addChild(self.mustBe("keyword", "return"))
+
+        if not self.have("symbol", ";"):
+            tree.addChild(self.compileExpression())
+
+        tree.addChild(self.mustBe("symbol", ";"))
+        return tree
 
     def compileExpression(self):
-        expression_tree = ParseTree('expression')
-        expression_tree.addChild(self.compileTerm())
-        while self.have('symbol'):
-            op = self.current().value
-            if op in ['+', '-', '*', '/', '&', '|', '<', '>', '=']:
-                expression_tree.addChild(ParseTree('symbol', self.mustbe('symbol').value))
-                expression_tree.addChild(self.compileTerm())
-            else:
-                break
-        return expression_tree
+        tree = ParseTree("expression")
+        tree.addChild(self.compileTerm())
+
+        while self.have("symbol", ["+", "-", "*", "/", "&", "|", "<", ">", "="]):
+            tree.addChild(self.mustBe("symbol"))
+            tree.addChild(self.compileTerm())
+
+        return tree
 
     def compileTerm(self):
-        term_tree = ParseTree('term')
-        if self.have('integerConstant'):
-            term_tree.addChild(ParseTree('integerConstant', self.mustbe('integerConstant').value))
-        elif self.have('stringConstant'):
-            term_tree.addChild(ParseTree('stringConstant', self.mustbe('stringConstant').value))
-        elif self.have('keyword'):
-            term_tree.addChild(ParseTree('keyword', self.mustbe('keyword').value))
-        elif self.have('identifier'):
-            term_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-            if self.have('symbol', '['):
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '[').value))
-                term_tree.addChild(self.compileExpression())
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ']').value))
-            elif self.have('symbol', '('):
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-                term_tree.addChild(self.compileExpressionList())
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-            elif self.have('symbol', '.'):
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '.').value))
-                term_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-                term_tree.addChild(self.compileExpressionList())
-                term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        elif self.have('symbol', '('):
-            term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-            term_tree.addChild(self.compileExpression())
-            term_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        elif self.have('symbol'):
-            term_tree.addChild(ParseTree('symbol', self.mustbe('symbol').value))
-            term_tree.addChild(self.compileTerm())
+        tree = ParseTree("term")
+
+        if self.have("integerConstant"):
+            tree.addChild(self.mustBe("integerConstant"))
+        elif self.have("stringConstant"):
+            tree.addChild(self.mustBe("stringConstant"))
+        elif self.have("keyword", ["true", "false", "null", "this"]):
+            tree.addChild(self.mustBe("keyword"))
+        elif self.have("identifier"):
+            tree.addChild(self.mustBe("identifier"))
+            if self.have("symbol", "["):
+                tree.addChild(self.mustBe("symbol", "["))
+                tree.addChild(self.compileExpression())
+                tree.addChild(self.mustBe("symbol", "]"))
+            elif self.have("symbol", "("):
+                tree.addChild(self.mustBe("symbol", "("))
+                tree.addChild(self.compileExpressionList())
+                tree.addChild(self.mustBe("symbol", ")"))
+            elif self.have("symbol", "."):
+                tree.addChild(self.mustBe("symbol", "."))
+                tree.addChild(self.mustBe("identifier"))
+                tree.addChild(self.mustBe("symbol", "("))
+                tree.addChild(self.compileExpressionList())
+                tree.addChild(self.mustBe("symbol", ")"))
+        elif self.have("symbol", "("):
+            tree.addChild(self.mustBe("symbol", "("))
+            tree.addChild(self.compileExpression())
+            tree.addChild(self.mustBe("symbol", ")"))
+        elif self.have("symbol", ["-", "~"]):
+            tree.addChild(self.mustBe("symbol"))
+            tree.addChild(self.compileTerm())
         else:
-            raise ParseException("Unexpected token: " + str(self.current()))
-        return term_tree
+            raise ParseException(f"Unexpected token {self.current().getType()} {self.current().getValue()}")
+
+        return tree
 
     def compileExpressionList(self):
-        expression_list_tree = ParseTree('expressionList')
-        if not self.have('symbol', ')'):
-            expression_list_tree.addChild(self.compileExpression())
-            while self.have('symbol', ','):
-                expression_list_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ',').value))
-                expression_list_tree.addChild(self.compileExpression())
-        return expression_list_tree
+        tree = ParseTree("expressionList")
+
+        if not self.have("symbol", ")"):
+            tree.addChild(self.compileExpression())
+            while self.have("symbol", ","):
+                tree.addChild(self.mustBe("symbol", ","))
+                tree.addChild(self.compileExpression())
+
+        return tree
 
     def compileSubroutineCall(self):
-        subroutine_call_tree = ParseTree('subroutineCall')
-        subroutine_call_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-        if self.have('symbol', '.'):
-            subroutine_call_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '.').value))
-            subroutine_call_tree.addChild(ParseTree('identifier', self.mustbe('identifier').value))
-        subroutine_call_tree.addChild(ParseTree('symbol', self.mustbe('symbol', '(').value))
-        subroutine_call_tree.addChild(self.compileExpressionList())
-        subroutine_call_tree.addChild(ParseTree('symbol', self.mustbe('symbol', ')').value))
-        return subroutine_call_tree
+        tree = ParseTree("subroutineCall")
+        tree.addChild(self.mustBe("identifier"))
 
-    def mustbeType(self):
-        if self.have('keyword', 'int') or self.have('keyword', 'char') or self.have('keyword', 'boolean'):
-            return self.mustbe('keyword')
-        else:
-            return self.mustbe('identifier')
+        if self.have("symbol", "."):
+            tree.addChild(self.mustBe("symbol", "."))
+            tree.addChild(self.mustBe("identifier"))
 
-class ParseException(Exception):
-    pass
+        tree.addChild(self.mustBe("symbol", "("))
+        tree.addChild(self.compileExpressionList())
+        tree.addChild(self.mustBe("symbol", ")"))
+
+        return tree
+
+if __name__ == "__main__":
+    tokens = [
+        Token("keyword", "class"),
+        Token("identifier", "MyClass"),
+        Token("symbol", "{"),
+        Token("symbol", "}")
+    ]
+
+    parser = CompilerParser(tokens)
+    try:
+        result = parser.compileProgram()
+        print(result)
+    except ParseException as e:
+        print(f"Error Parsing: {e}")
